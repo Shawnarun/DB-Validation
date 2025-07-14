@@ -13,17 +13,31 @@ spring:
       max-lifetime: 1800000
       maximum-pool-size: 20
       minimum-idle: 5
-      
+      # Oracle specific settings to handle serialization issues
+      data-source-properties:
+        oracle.jdbc.defaultConnectionTimeout: 60000
+        oracle.jdbc.ReadTimeout: 300000
+        oracle.net.CONNECT_TIMEOUT: 60000
+        oracle.jdbc.autoCommitSpecCompliant: false
+        # Set transaction isolation to READ_COMMITTED to avoid ORA-08177
+        defaultTransactionIsolation: 2  # READ_COMMITTED
+        
   batch:
     job:
       enabled: false # Don't auto-start jobs
     jdbc:
       initialize-schema: always
+      isolation-level-for-create: read_committed
       
   jpa:
     hibernate:
       ddl-auto: none
     show-sql: false
+    
+  # Transaction configuration
+  transaction:
+    default-timeout: 300
+    rollback-on-commit-failure: true
     
 management:
   endpoints:
@@ -42,11 +56,16 @@ migration:
     thread-pool-size: 4
     skip-limit: 10
     restart-on-error: true
+    # Retry configuration for transient errors
+    max-retry-attempts: 3
+    retry-backoff-delay: 2000
     
 logging:
   level:
     com.oracle.migration: DEBUG
     org.springframework.batch: INFO
+    org.springframework.jdbc: DEBUG
+    org.springframework.transaction: DEBUG
     root: INFO
   pattern:
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

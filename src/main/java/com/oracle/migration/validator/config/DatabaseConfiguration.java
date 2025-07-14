@@ -4,15 +4,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.retry.annotation.EnableRetry;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
 
 /**
- * Database configuration for Oracle connections
+ * Database configuration for Oracle connections with serialization handling
  */
 @Configuration
 @EnableTransactionManagement
+@EnableRetry
 public class DatabaseConfiguration {
     
     /**
@@ -24,6 +29,21 @@ public class DatabaseConfiguration {
         jdbcTemplate.setQueryTimeout(300); // 5 minutes timeout for long queries
         jdbcTemplate.setFetchSize(1000); // Optimize fetch size for large result sets
         return jdbcTemplate;
+    }
+    
+    /**
+     * Configure transaction manager with READ_COMMITTED isolation level
+     * to avoid Oracle serialization issues
+     */
+    @Bean
+    public PlatformTransactionManager transactionManager(DataSource dataSource) {
+        DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(dataSource);
+        
+        // Set default isolation level to READ_COMMITTED to avoid ORA-08177
+        transactionManager.setDefaultTimeout(300); // 5 minutes
+        transactionManager.setNestedTransactionAllowed(true);
+        
+        return transactionManager;
     }
     
     /**

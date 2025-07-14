@@ -225,10 +225,14 @@ export JAVA_OPTS="-Xmx2g -XX:+UseG1GC"
 
 ### Common Issues
 
-1. **Connection Timeout**: Increase `connection-timeout` in datasource config
-2. **Memory Issues**: Reduce `chunk-size` and increase heap size
-3. **Slow Performance**: Check database indexes and network latency
-4. **Job Won't Start**: Verify Spring Batch metadata tables exist
+1. **ORA-08177 Serialization Error**: See [Oracle Troubleshooting Guide](ORACLE_TROUBLESHOOTING.md)
+2. **Connection Timeout**: Increase `connection-timeout` in datasource config
+3. **Memory Issues**: Reduce `chunk-size` and increase heap size
+4. **Slow Performance**: Check database indexes and network latency
+5. **Job Won't Start**: Verify Spring Batch metadata tables exist
+
+### Oracle-Specific Issues
+For detailed Oracle database troubleshooting, including serialization errors, deadlocks, and performance issues, see the comprehensive [Oracle Troubleshooting Guide](ORACLE_TROUBLESHOOTING.md).
 
 ### Debug Mode
 ```bash

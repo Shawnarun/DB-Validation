@@ -22,9 +22,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Isolation;
 
 /**
- * Spring Batch configuration for migration validation job
+ * Spring Batch configuration for migration validation job with Oracle support
  */
 @Configuration
 @EnableBatchProcessing
@@ -66,7 +67,12 @@ public class ValidationJobConfiguration {
             .faultTolerant()
             .skip(Exception.class)
             .skipLimit(skipLimit)
+            .retryLimit(3)
+            .retry(org.springframework.dao.DataAccessException.class)
+            .backOffPolicy(exponentialBackOffPolicy())
             .taskExecutor(validationTaskExecutor())
+            // Use synchronous processing for Oracle to avoid serialization issues
+            .throttleLimit(1)
             .build();
     }
     
@@ -88,14 +94,28 @@ public class ValidationJobConfiguration {
     @Bean
     public TaskExecutor validationTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(threadPoolSize);
-        executor.setMaxPoolSize(threadPoolSize * 2);
+        // Reduce concurrency to avoid Oracle serialization issues
+        executor.setCorePoolSize(Math.min(threadPoolSize, 2));
+        executor.setMaxPoolSize(Math.min(threadPoolSize * 2, 4));
         executor.setQueueCapacity(1000);
         executor.setThreadNamePrefix("validation-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(60);
         executor.initialize();
         return executor;
+    }
+    
+    /**
+     * Exponential backoff policy for retries
+     */
+    @Bean
+    public org.springframework.retry.backoff.BackOffPolicy exponentialBackOffPolicy() {
+        org.springframework.retry.backoff.ExponentialBackOffPolicy backOffPolicy = 
+            new org.springframework.retry.backoff.ExponentialBackOffPolicy();
+        backOffPolicy.setInitialInterval(1000);
+        backOffPolicy.setMaxInterval(10000);
+        backOffPolicy.setMultiplier(2.0);
+        return backOffPolicy;
     }
     
     @Bean
@@ -105,11 +125,17 @@ public class ValidationJobConfiguration {
             @Override
             public void beforeJob(JobExecution jobExecution) {
                 logger.info("Starting migration validation job: {}", jobExecution.getJobInstance().getJobName());
-                var progress = validationService.getValidationProgress();
-                logger.info("Initial progress: {}/{} mobile numbers validated ({}%)", 
-                           progress.validatedMobileNumbers(), 
-                           progress.totalMobileNumbers(),
-                           String.format("%.2f", progress.progressPercentage()));
+                logger.info("Job parameters: {}", jobExecution.getJobParameters().toProperties());
+                
+                try {
+                    var progress = validationService.getValidationProgress();
+                    logger.info("Initial progress: {}/{} mobile numbers validated ({}%)", 
+                               progress.validatedMobileNumbers(), 
+                               progress.totalMobileNumbers(),
+                               String.format("%.2f", progress.progressPercentage()));
+                } catch (Exception e) {
+                    logger.warn("Could not retrieve initial progress: {}", e.getMessage());
+                }
             }
             
             @Override
@@ -118,26 +144,35 @@ public class ValidationJobConfiguration {
                            jobExecution.getJobInstance().getJobName(),
                            jobExecution.getStatus());
                 
-                var progress = validationService.getValidationProgress();
-                logger.info("Final progress: {}/{} mobile numbers validated ({}%)", 
-                           progress.validatedMobileNumbers(), 
-                           progress.totalMobileNumbers(),
-                           String.format("%.2f", progress.progressPercentage()));
-                
-                var statistics = validationService.getValidationStatistics();
-                logger.info("Validation statistics: Total={}, SR1={}, SR2={}, SR4={}, SR5={}, SR6={}", 
-                           statistics.totalValidated(),
-                           statistics.sr1Passed(),
-                           statistics.sr2Passed(),
-                           statistics.sr4Passed(),
-                           statistics.sr5Passed(),
-                           statistics.sr6Passed());
+                try {
+                    var progress = validationService.getValidationProgress();
+                    logger.info("Final progress: {}/{} mobile numbers validated ({}%)", 
+                               progress.validatedMobileNumbers(), 
+                               progress.totalMobileNumbers(),
+                               String.format("%.2f", progress.progressPercentage()));
+                    
+                    var statistics = validationService.getValidationStatistics();
+                    logger.info("Validation statistics: Total={}, SR1={}, SR2={}, SR4={}, SR5={}, SR6={}", 
+                               statistics.totalValidated(),
+                               statistics.sr1Passed(),
+                               statistics.sr2Passed(),
+                               statistics.sr4Passed(),
+                               statistics.sr5Passed(),
+                               statistics.sr6Passed());
+                } catch (Exception e) {
+                    logger.warn("Could not retrieve final statistics: {}", e.getMessage());
+                }
                 
                 if (jobExecution.getStatus().isUnsuccessful()) {
                     logger.error("Job failed with {} failures", 
                                 jobExecution.getAllFailureExceptions().size());
-                    jobExecution.getAllFailureExceptions().forEach(ex -> 
-                        logger.error("Job failure: ", ex));
+                    jobExecution.getAllFailureExceptions().forEach(ex -> {
+                        if (ex.getMessage() != null && ex.getMessage().contains("ORA-08177")) {
+                            logger.error("Oracle serialization error detected: {}", ex.getMessage());
+                        } else {
+                            logger.error("Job failure: ", ex);
+                        }
+                    });
                 }
             }
         };
