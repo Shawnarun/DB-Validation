@@ -137,9 +137,6 @@ public class ValidationController {
                     .body("Validation failed: " + result.errorMessage());
             }
             
-            // Save the result
-            validationService.saveValidationResults(java.util.List.of(result));
-            
             return ResponseEntity.ok("Mobile number validated successfully: " + 
                 result.results().toString());
                 
@@ -147,6 +144,43 @@ public class ValidationController {
             logger.error("Failed to validate mobile number: {}", mobileNo, e);
             return ResponseEntity.internalServerError()
                 .body("Failed to validate mobile number: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Get cache statistics for monitoring duplicate prevention
+     */
+    @GetMapping("/cache-stats")
+    public ResponseEntity<?> getCacheStatistics() {
+        try {
+            if (validationService instanceof com.oracle.migration.validator.service.MigrationValidationServiceImpl impl) {
+                var stats = impl.getCacheStatistics();
+                return ResponseEntity.ok(stats);
+            } else {
+                return ResponseEntity.ok("Cache statistics not available for this implementation");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to get cache statistics", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * Clear the validation cache (useful for troubleshooting)
+     */
+    @PostMapping("/clear-cache")
+    public ResponseEntity<String> clearCache() {
+        try {
+            if (validationService instanceof com.oracle.migration.validator.service.MigrationValidationServiceImpl impl) {
+                impl.clearCache();
+                return ResponseEntity.ok("Validation cache cleared successfully");
+            } else {
+                return ResponseEntity.ok("Cache clearing not available for this implementation");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to clear cache", e);
+            return ResponseEntity.internalServerError()
+                .body("Failed to clear cache: " + e.getMessage());
         }
     }
     

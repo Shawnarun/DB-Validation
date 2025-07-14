@@ -140,37 +140,90 @@ public class MigrationAuditRepositoryImpl implements MigrationAuditRepository {
             if (count == null || count == 0) {
                 String createTableSql = """
                     CREATE TABLE OM.TEMP_MIGRATION_AUDIT (
-                        MOBILE_NO     VARCHAR2(20),
+                        MOBILE_NO     VARCHAR2(20) NOT NULL,
                         V1            VARCHAR2(10),
                         V2            VARCHAR2(10),
                         V3            VARCHAR2(10),
                         V4            VARCHAR2(10),
                         V5            VARCHAR2(10),
-                        CREATED_DATE  DATE DEFAULT SYSDATE
+                        CREATED_DATE  DATE DEFAULT SYSDATE,
+                        CONSTRAINT PK_TEMP_MIGRATION_AUDIT PRIMARY KEY (MOBILE_NO)
                     )
                     """;
                 
                 jdbcTemplate.execute(createTableSql);
-                logger.info("Created TEMP_MIGRATION_AUDIT table");
+                logger.info("Created TEMP_MIGRATION_AUDIT table with unique constraint on MOBILE_NO");
                 
-                // Create index for better performance
-                String createIndexSql = """
-                    CREATE INDEX IDX_TEMP_MIGRATION_AUDIT_MOBILE_NO 
-                    ON OM.TEMP_MIGRATION_AUDIT (MOBILE_NO)
-                    """;
-                
-                try {
-                    jdbcTemplate.execute(createIndexSql);
-                    logger.info("Created index on MOBILE_NO column");
-                } catch (DataAccessException e) {
-                    logger.warn("Failed to create index, but continuing: {}", e.getMessage());
-                }
             } else {
                 logger.info("TEMP_MIGRATION_AUDIT table already exists");
+                
+                // Check if unique constraint exists, add if missing
+                ensureUniqueConstraintExists();
             }
         } catch (DataAccessException e) {
             logger.error("Failed to create audit table, error: {}", e.getMessage(), e);
             throw e;
+        }
+    }
+    
+    /**
+     * Ensure unique constraint exists on MOBILE_NO column
+     */
+    private void ensureUniqueConstraintExists() {
+        try {
+            String checkConstraintSql = """
+                SELECT COUNT(*) FROM user_constraints 
+                WHERE table_name = 'TEMP_MIGRATION_AUDIT' 
+                AND constraint_type = 'P'
+                """;
+            
+            Integer constraintCount = jdbcTemplate.queryForObject(checkConstraintSql, Integer.class);
+            
+            if (constraintCount == null || constraintCount == 0) {
+                logger.info("Adding unique constraint to existing TEMP_MIGRATION_AUDIT table");
+                
+                // First remove any existing duplicates
+                removeDuplicateRecords();
+                
+                // Add primary key constraint
+                String addConstraintSql = """
+                    ALTER TABLE OM.TEMP_MIGRATION_AUDIT 
+                    ADD CONSTRAINT PK_TEMP_MIGRATION_AUDIT PRIMARY KEY (MOBILE_NO)
+                    """;
+                
+                jdbcTemplate.execute(addConstraintSql);
+                logger.info("Successfully added unique constraint on MOBILE_NO column");
+                
+            } else {
+                logger.debug("Unique constraint already exists on MOBILE_NO column");
+            }
+            
+        } catch (DataAccessException e) {
+            logger.warn("Could not add unique constraint (may already exist): {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Remove duplicate records keeping only the first occurrence
+     */
+    private void removeDuplicateRecords() {
+        try {
+            String removeDuplicatesSql = """
+                DELETE FROM OM.TEMP_MIGRATION_AUDIT 
+                WHERE ROWID NOT IN (
+                    SELECT MIN(ROWID) 
+                    FROM OM.TEMP_MIGRATION_AUDIT 
+                    GROUP BY MOBILE_NO
+                )
+                """;
+            
+            int deletedRows = jdbcTemplate.update(removeDuplicatesSql);
+            if (deletedRows > 0) {
+                logger.info("Removed {} duplicate records from audit table", deletedRows);
+            }
+            
+        } catch (DataAccessException e) {
+            logger.warn("Could not remove duplicate records: {}", e.getMessage());
         }
     }
     

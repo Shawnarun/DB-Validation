@@ -6,10 +6,11 @@ A comprehensive Spring Boot application for validating data migration from ATDM 
 
 - **Efficient Batch Processing**: Uses Spring Batch with virtual threads for high-performance validation
 - **Business Rule Validation**: Implements 4 predefined validation scenarios (SR1, SR4, SR5, SR6)
+- **Duplicate Prevention**: Multi-layer protection against duplicate processing with race condition handling
 - **Idempotent Operations**: Skips already validated records to support resume functionality
 - **Progress Tracking**: Real-time progress monitoring and statistics
 - **REST API**: Web endpoints for job management and monitoring
-- **Audit Logging**: Comprehensive validation results stored in temporary audit table
+- **Audit Logging**: Comprehensive validation results stored in temporary audit table with unique constraints
 - **Fault Tolerance**: Skip limits and error handling for production robustness
 
 ## Technology Stack
@@ -48,6 +49,24 @@ Ensures SIM+IMSI pairs in `DYN_1_CONNECTION` match `IMSI_SIM_REGISTER`.
 
 ### SR6: IMSI Existence in Provisioning Switch
 Checks if IMSI exists in `PROV_SWITCH_IMAGE` table.
+
+## Duplicate Prevention
+
+The application implements comprehensive duplicate prevention using multiple layers:
+
+### **Multi-Layer Protection**
+1. **In-Memory Cache**: Thread-safe concurrent tracking of processed numbers
+2. **Database Checks**: Real-time validation against audit table
+3. **Atomic Transactions**: Combined validation and save operations
+4. **Database Constraints**: Primary key enforcement at database level
+5. **Graceful Recovery**: Individual record fallback for edge cases
+
+### **Race Condition Handling**
+- Concurrent thread coordination using `ConcurrentHashMap`
+- Processing state tracking to prevent duplicate work
+- Automatic retry and fallback mechanisms
+
+For detailed information, see [Duplicate Prevention Guide](DUPLICATE_PREVENTION.md).
 
 ## Database Schema
 
@@ -155,6 +174,16 @@ curl -X POST http://localhost:8080/api/validation/validate/9876543210
 ### Get Detailed Report
 ```bash
 curl http://localhost:8080/api/validation/report
+```
+
+### Monitor Cache Statistics
+```bash
+curl http://localhost:8080/api/validation/cache-stats
+```
+
+### Clear Validation Cache
+```bash
+curl -X POST http://localhost:8080/api/validation/clear-cache
 ```
 
 ## Monitoring and Operations
