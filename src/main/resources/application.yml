@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: oracle-data-migration-validator
+  
+  datasource:
+    url: jdbc:oracle:thin:@${DB_HOST:localhost}:${DB_PORT:1521}:${DB_SID:XE}
+    username: ${DB_USERNAME:system}
+    password: ${DB_PASSWORD:oracle}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      connection-timeout: 60000
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      maximum-pool-size: 20
+      minimum-idle: 5
+      
+  batch:
+    job:
+      enabled: false # Don't auto-start jobs
+    jdbc:
+      initialize-schema: always
+      
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,batch
+  endpoint:
+    health:
+      show-details: always
+
+# Application specific configurations
+migration:
+  validation:
+    batch-size: 1000
+    chunk-size: 100
+    thread-pool-size: 4
+    skip-limit: 10
+    restart-on-error: true
+    
+logging:
+  level:
+    com.oracle.migration: DEBUG
+    org.springframework.batch: INFO
+    root: INFO
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/migration-validator.log
+    max-size: 100MB
+    max-history: 30
