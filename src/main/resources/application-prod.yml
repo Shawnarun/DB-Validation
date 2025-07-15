@@ -8,24 +8,32 @@ spring:
       enabled: true
   
   datasource:
+    # Production database connection with environment variables
     url: jdbc:oracle:thin:@${DB_HOST:localhost}:${DB_PORT:1521}:${DB_SID:XE}
     username: ${DB_USERNAME:system}
     password: ${DB_PASSWORD:oracle}
     driver-class-name: oracle.jdbc.OracleDriver
+    
+    # Connection pool settings optimized for production
     hikari:
-      connection-timeout: 60000
-      idle-timeout: 300000
+      connection-timeout: 30000
+      idle-timeout: 600000
       max-lifetime: 1800000
       maximum-pool-size: 20
       minimum-idle: 5
+      leak-detection-threshold: 60000
+      
       # Oracle specific settings to handle serialization issues
       data-source-properties:
-        oracle.jdbc.defaultConnectionTimeout: 60000
+        oracle.jdbc.defaultConnectionTimeout: 30000
         oracle.jdbc.ReadTimeout: 300000
-        oracle.net.CONNECT_TIMEOUT: 60000
+        oracle.net.CONNECT_TIMEOUT: 30000
         oracle.jdbc.autoCommitSpecCompliant: false
         # Set transaction isolation to READ_COMMITTED to avoid ORA-08177
         defaultTransactionIsolation: 2  # READ_COMMITTED
+        # Additional Oracle optimizations
+        oracle.jdbc.implicitStatementCacheSize: 25
+        oracle.jdbc.defaultExecuteBatch: 50
         
   batch:
     job:
@@ -36,7 +44,7 @@ spring:
       
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate  # Use validate in production
     show-sql: false
     database-platform: org.hibernate.dialect.OracleDialect
     properties:
@@ -52,6 +60,9 @@ spring:
         order_inserts: true
         order_updates: true
         jdbc.batch_versioned_data: true
+        # Connection handling
+        connection.provider_disables_autocommit: true
+        connection.autocommit: false
     
   # Transaction configuration
   transaction:
@@ -65,7 +76,13 @@ management:
         include: health,metrics,info,batch
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
+      
+  health:
+    db:
+      enabled: true
+    defaults:
+      enabled: true
 
 # Application specific configurations
 migration:
@@ -77,8 +94,8 @@ migration:
     skip-limit: 10
     restart-on-error: true
     # Retry configuration for transient errors
-    max-retry-attempts: 3
-    retry-backoff-delay: 2000
+    max-retry-attempts: 5
+    retry-backoff-delay: 3000
     # Virtual thread specific optimizations
     virtual-threads:
       enabled: true
@@ -86,10 +103,12 @@ migration:
     
 logging:
   level:
-    com.oracle.migration: DEBUG
-    org.springframework.batch: INFO
-    org.springframework.jdbc: DEBUG
-    org.springframework.transaction: DEBUG
+    com.oracle.migration: INFO
+    org.springframework.batch: WARN
+    org.springframework.jdbc: WARN
+    org.springframework.transaction: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type: WARN
     root: INFO
   pattern:
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
