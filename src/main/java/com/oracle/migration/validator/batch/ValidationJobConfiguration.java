@@ -20,12 +20,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskExecutor;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.core.task.VirtualThreadTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Isolation;
 
+import java.util.concurrent.Executors;
+
 /**
- * Spring Batch configuration for migration validation job with Oracle support
+ * Spring Batch configuration optimized for virtual threads and Oracle compatibility
  */
 @Configuration
 @EnableBatchProcessing
@@ -71,8 +73,8 @@ public class ValidationJobConfiguration {
             .retry(org.springframework.dao.DataAccessException.class)
             .backOffPolicy(exponentialBackOffPolicy())
             .taskExecutor(validationTaskExecutor())
-            // Use synchronous processing for Oracle to avoid serialization issues
-            .throttleLimit(1)
+            // Virtual threads handle concurrency better than throttling
+            .throttleLimit(threadPoolSize * 10) // Higher limit for virtual threads
             .build();
     }
     
@@ -91,18 +93,39 @@ public class ValidationJobConfiguration {
         return new ValidationItemWriter(validationService);
     }
     
+    /**
+     * Virtual Thread Task Executor for optimal performance
+     * Virtual threads are perfect for I/O-intensive database operations
+     */
     @Bean
     public TaskExecutor validationTaskExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        // Reduce concurrency to avoid Oracle serialization issues
-        executor.setCorePoolSize(Math.min(threadPoolSize, 2));
-        executor.setMaxPoolSize(Math.min(threadPoolSize * 2, 4));
-        executor.setQueueCapacity(1000);
-        executor.setThreadNamePrefix("validation-");
-        executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(60);
-        executor.initialize();
+        logger.info("Configuring validation task executor with virtual threads");
+        
+        // Use virtual threads for better resource utilization
+        VirtualThreadTaskExecutor executor = new VirtualThreadTaskExecutor("validation-vt-");
+        
+        // Virtual threads don't need traditional pool configuration
+        // They are created on-demand and are very lightweight
+        
         return executor;
+    }
+    
+    /**
+     * Alternative: Custom virtual thread executor for more control
+     */
+    @Bean("customVirtualThreadExecutor")
+    public TaskExecutor customVirtualThreadExecutor() {
+        logger.info("Creating custom virtual thread executor");
+        
+        return new TaskExecutor() {
+            private final java.util.concurrent.ExecutorService virtualExecutor = 
+                Executors.newVirtualThreadPerTaskExecutor();
+            
+            @Override
+            public void execute(Runnable task) {
+                virtualExecutor.submit(task);
+            }
+        };
     }
     
     /**
@@ -126,6 +149,7 @@ public class ValidationJobConfiguration {
             public void beforeJob(JobExecution jobExecution) {
                 logger.info("Starting migration validation job: {}", jobExecution.getJobInstance().getJobName());
                 logger.info("Job parameters: {}", jobExecution.getJobParameters().toProperties());
+                logger.info("Using virtual threads for batch processing");
                 
                 try {
                     var progress = validationService.getValidationProgress();

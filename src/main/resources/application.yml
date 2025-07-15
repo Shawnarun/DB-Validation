@@ -2,6 +2,11 @@ spring:
   application:
     name: oracle-data-migration-validator
   
+  # Enable virtual threads globally (Spring Boot 3.2+)
+  threads:
+    virtual:
+      enabled: true
+  
   datasource:
     url: jdbc:oracle:thin:@${DB_HOST:localhost}:${DB_PORT:1521}:${DB_SID:XE}
     username: ${DB_USERNAME:system}
@@ -53,12 +58,17 @@ migration:
   validation:
     batch-size: 1000
     chunk-size: 100
-    thread-pool-size: 4
+    # Higher thread pool size for virtual threads (lightweight)
+    thread-pool-size: 20
     skip-limit: 10
     restart-on-error: true
     # Retry configuration for transient errors
     max-retry-attempts: 3
     retry-backoff-delay: 2000
+    # Virtual thread specific optimizations
+    virtual-threads:
+      enabled: true
+      max-concurrent-validations: 100
     
 logging:
   level:
